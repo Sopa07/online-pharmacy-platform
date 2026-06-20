@@ -1,0 +1,50 @@
+[
+  {
+    "id": 1,
+    "name": "Dr. Adaeze Okonkwo",
+    "specialization": "Clinical Pharmacist",
+    "availability": "Mon - Fri, 9:00 AM - 4:00 PM WAT",
+    "rating": 4.9,
+    "photo": "https://images.unsplash.com/photo-1559839734-2b71ea197ec2?auto=format&fit=crop&w=700&q=80"
+  },
+  {
+    "id": 2,
+    "name": "Dr. Tunde Adebayo",
+    "specialization": "General Practitioner",
+    "availability": "Mon - Sat, 10:00 AM - 6:00 PM WAT",
+    "rating": 4.8,
+    "photo": "https://images.unsplash.com/photo-1537368910025-700350fe46c7?auto=format&fit=crop&w=700&q=80"
+  },
+  {
+    "id": 3,
+    "name": "Dr. Chidinma Eze",
+    "specialization": "Dermatology",
+    "availability": "Tue - Fri, 11:00 AM - 5:00 PM WAT",
+    "rating": 4.7,
+    "photo": "https://images.unsplash.com/photo-1614608682850-e0d6ed316d47?auto=format&fit=crop&w=700&q=80"
+  },
+  {
+    "id": 4,
+    "name": "Dr. Sani Musa",
+    "specialization": "Endocrinology",
+    "availability": "Mon - Thu, 8:30 AM - 3:30 PM WAT",
+    "rating": 4.9,
+    "photo": "https://images.unsplash.com/photo-1582750433449-648ed127bb54?auto=format&fit=crop&w=700&q=80"
+  },
+  {
+    "id": 5,
+    "name": "Dr. Kemi Balogun",
+    "specialization": "Pediatrics",
+    "availability": "Mon - Fri, 9:30 AM - 4:30 PM WAT",
+    "rating": 4.8,
+    "photo": "https://images.unsplash.com/photo-1594824475317-df2b5a97cb7c?auto=format&fit=crop&w=700&q=80"
+  },
+  {
+    "id": 6,
+    "name": "Dr. Ibrahim Lawal",
+    "specialization": "Cardiology",
+    "availability": "Wed - Sat, 12:00 PM - 7:00 PM WAT",
+    "rating": 4.6,
+    "photo": "https://images.unsplash.com/photo-1622253692010-333f2da6031d?auto=format&fit=crop&w=700&q=80"
+  }
+]

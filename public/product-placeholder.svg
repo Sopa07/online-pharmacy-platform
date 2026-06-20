@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="900" viewBox="0 0 900 900" role="img" aria-labelledby="title desc">
+  <title id="title">Product image pending</title>
+  <desc id="desc">A clean placeholder for pharmacy product images.</desc>
+  <rect width="900" height="900" fill="#f8fafc"/>
+  <rect x="96" y="96" width="708" height="708" rx="42" fill="#ffffff" stroke="#dbe5ef" stroke-width="6"/>
+  <path d="M450 224c-64 0-116 52-116 116v74h-74c-64 0-116 52-116 116s52 116 116 116h74v74c0 64 52 116 116 116s116-52 116-116v-74h74c64 0 116-52 116-116s-52-116-116-116h-74v-74c0-64-52-116-116-116Z" fill="#e9f7f5"/>
+  <path d="M450 272c38 0 68 30 68 68v122h122c38 0 68 30 68 68s-30 68-68 68H518v122c0 38-30 68-68 68s-68-30-68-68V598H260c-38 0-68-30-68-68s30-68 68-68h122V340c0-38 30-68 68-68Z" fill="#138a7e"/>
+  <circle cx="630" cy="270" r="42" fill="#f6b445"/>
+  <text x="450" y="792" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="34" font-weight="700" fill="#334155">Product image pending</text>
+</svg>

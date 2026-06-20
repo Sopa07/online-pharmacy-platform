@@ -1,0 +1,74 @@
+[
+  {
+    "id": 1,
+    "name": "DIGESTIVE HEALTH",
+    "description": "Relief and daily support for gut comfort.",
+    "image": "https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=700&q=80"
+  },
+  {
+    "id": 2,
+    "name": "WOMEN'S HEALTH",
+    "description": "Care for hormonal balance, wellness, and vitality.",
+    "image": "https://images.unsplash.com/photo-1515378791036-0648a3ef77b2?auto=format&fit=crop&w=700&q=80"
+  },
+  {
+    "id": 3,
+    "name": "MEN'S HEALTH",
+    "description": "Support for strength, energy, and daily health.",
+    "image": "https://images.unsplash.com/photo-1542223616-740d5dff7f56?auto=format&fit=crop&w=700&q=80"
+  },
+  {
+    "id": 4,
+    "name": "COUGH, COLD AND FLU",
+    "description": "Fast relief for cough, cold, and flu symptoms.",
+    "image": "https://images.unsplash.com/photo-1585435557343-3b092031a831?auto=format&fit=crop&w=700&q=80"
+  },
+  {
+    "id": 5,
+    "name": "MEDICAL DEVICES AND DIAGNOSTICS",
+    "description": "Trusted devices for home monitoring.",
+    "image": "https://images.unsplash.com/photo-1581595220892-b0739db3ba8c?auto=format&fit=crop&w=700&q=80"
+  },
+  {
+    "id": 6,
+    "name": "SKIN CARE",
+    "description": "Gentle care for healthy, glowing skin.",
+    "image": "https://images.unsplash.com/photo-1600185365483-26d7a4cc7519?auto=format&fit=crop&w=700&q=80"
+  },
+  {
+    "id": 7,
+    "name": "MOTHER AND CHILD CARE",
+    "description": "Essentials for moms, babies, and toddlers.",
+    "image": "https://images.unsplash.com/photo-1515488042361-ee00e0ddd4e4?auto=format&fit=crop&w=700&q=80"
+  },
+  {
+    "id": 8,
+    "name": "SEXUAL HEALTH",
+    "description": "Confidential support for sexual wellbeing.",
+    "image": "https://images.unsplash.com/photo-1513431683207-9d10f2f9c0e9?auto=format&fit=crop&w=700&q=80"
+  },
+  {
+    "id": 9,
+    "name": "ANTIMALARIA",
+    "description": "Protection and treatment support for malaria.",
+    "image": "https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?auto=format&fit=crop&w=700&q=80"
+  },
+  {
+    "id": 10,
+    "name": "PAIN RELIEVERS",
+    "description": "Fast relief for headaches, body pain, and fever.",
+    "image": "https://images.unsplash.com/photo-1471864190281-a93a3070b6de?auto=format&fit=crop&w=700&q=80"
+  },
+  {
+    "id": 11,
+    "name": "EYE AND EAR MEDS",
+    "description": "Comfort for eye and ear irritation.",
+    "image": "https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?auto=format&fit=crop&w=700&q=80"
+  },
+  {
+    "id": 12,
+    "name": "TOPICALS",
+    "description": "Creams and ointments for external care.",
+    "image": "https://images.unsplash.com/photo-1611078489935-0cb964de46d6?auto=format&fit=crop&w=700&q=80"
+  }
+]
