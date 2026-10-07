@@ -18,25 +18,33 @@ let supabaseInitError = null;
 let productsCache = null;
 
 function getSupabase() {
-  const supabaseUrl = process.env.SUPABASE_URL;
-  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const supabaseUrl = (process.env.SUPABASE_URL || "").trim();
+  // Strip stray wrapping quotes and whitespace users often paste in.
+  const supabaseServiceKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim().replace(/^["']|["']$/g, "");
   if (!supabaseUrl || !supabaseServiceKey) return null;
   if (!supabaseClient && !supabaseInitError) {
-    const cleaned = supabaseUrl.trim().replace(/\/+$/, "").replace(/\/rest\/v1$/i, "");
+    const cleaned = supabaseUrl.replace(/\/+$/, "").replace(/\/rest\/v1$/i, "").replace(/^["']|["']$/g, "");
     if (!/^https:\/\/[a-z0-9-]+\.supabase\.(co|in)\/?$/i.test(cleaned)) {
-      supabaseInitError = `SUPABASE_URL looks wrong ("${supabaseUrl}"). Expected https://your-project-id.supabase.co`;
+      supabaseInitError = `SUPABASE_URL looks wrong (got "${supabaseUrl}"). It must be exactly https://your-project-id.supabase.co (Supabase → Settings → Data API → Project URL)`;
       console.warn(supabaseInitError);
       return null;
     }
     try {
-      supabaseClient = createClient(cleaned, supabaseServiceKey.trim());
+      supabaseClient = createClient(cleaned, supabaseServiceKey);
     } catch (error) {
-      supabaseInitError = `Supabase client failed to initialize: ${error.message}`;
+      supabaseInitError = `SUPABASE_SERVICE_ROLE_KEY was rejected (got ${describeSecret(supabaseServiceKey)}): ${error.message}. It must be the full service_role key from Supabase → Settings → API Keys (starts with eyJ or sb_secret_)`;
       console.warn(supabaseInitError);
       return null;
     }
   }
   return supabaseClient;
+}
+
+// Safe, masked fingerprint of a secret for error messages: never the value,
+// just enough to spot a truncated or wrong variable.
+function describeSecret(value) {
+  const prefix = value.slice(0, 4);
+  return `a ${value.length}-char value starting "${prefix}..."`;
 }
 
 function getAdminEmails() {
@@ -411,10 +419,18 @@ async function handleApiInner(event) {
   }
 
   if (method === "GET" && (route === "/" || route === "/health")) {
+    const rawUrl = (process.env.SUPABASE_URL || "").trim();
+    const rawKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
     return json(200, {
       ok: true,
       service: "shazzar-pharmacy-api",
       authConfigured: isAuthConfigured(),
+      // Masked env fingerprints (values never exposed) to debug config remotely.
+      env: {
+        supabaseUrlSeen: rawUrl ? `"${rawUrl.slice(0, 40)}${rawUrl.length > 40 ? "..." : ""}" (${rawUrl.length} chars)` : "(empty)",
+        serviceKeySeen: rawKey ? `a ${rawKey.length}-char value starting "${rawKey.slice(0, 4)}..."` : "(empty)",
+        paystackSeen: process.env.PAYSTACK_SECRET_KEY ? "set" : "(empty)"
+      },
       timestamp: new Date().toISOString()
     }, headers);
   }
