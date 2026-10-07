@@ -11,16 +11,30 @@ const COUPON_PRESETS = {
   FREEDEL: { type: "delivery", value: 100 }
 };
 
-// createClient throws on empty credentials, so only build the client when both env vars are present.
+// createClient throws on empty or malformed credentials, so only build the
+// client when both env vars are present and the URL looks like a Supabase URL.
 let supabaseClient = null;
+let supabaseInitError = null;
 let productsCache = null;
 
 function getSupabase() {
   const supabaseUrl = process.env.SUPABASE_URL;
   const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!supabaseUrl || !supabaseServiceKey) return null;
-  if (!supabaseClient) {
-    supabaseClient = createClient(supabaseUrl, supabaseServiceKey);
+  if (!supabaseClient && !supabaseInitError) {
+    const cleaned = supabaseUrl.trim().replace(/\/+$/, "").replace(/\/rest\/v1$/i, "");
+    if (!/^https:\/\/[a-z0-9-]+\.supabase\.(co|in)\/?$/i.test(cleaned)) {
+      supabaseInitError = `SUPABASE_URL looks wrong ("${supabaseUrl}"). Expected https://your-project-id.supabase.co`;
+      console.warn(supabaseInitError);
+      return null;
+    }
+    try {
+      supabaseClient = createClient(cleaned, supabaseServiceKey.trim());
+    } catch (error) {
+      supabaseInitError = `Supabase client failed to initialize: ${error.message}`;
+      console.warn(supabaseInitError);
+      return null;
+    }
   }
   return supabaseClient;
 }
@@ -374,6 +388,19 @@ function validateLogin(body) {
 }
 
 export async function handleApi(event) {
+  try {
+    return await handleApiInner(event);
+  } catch (error) {
+    // Never let an unexpected error surface as Netlify's HTML error page —
+    // the client expects JSON so it can show a meaningful message.
+    console.error("Unhandled API error:", error);
+    return json(500, {
+      error: `Server error: ${error.message}. Please try again or contact support.`
+    }, getResponseHeaders(event));
+  }
+}
+
+async function handleApiInner(event) {
   const method = event.httpMethod || event.requestContext?.http?.method || "GET";
   const route = getRoute(event);
   const query = getQuery(event);
@@ -394,7 +421,11 @@ export async function handleApi(event) {
 
   const db = getSupabase();
   if (!db) {
-    return json(503, { error: "Backend services are not configured for this deployment." }, headers);
+    return json(503, {
+      error: supabaseInitError
+        ? `${supabaseInitError} Fix the SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY environment variables and redeploy.`
+        : "Backend services are not configured for this deployment. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in Netlify, then redeploy."
+    }, headers);
   }
 
   if (method === "GET" && route === "/auth/me") {

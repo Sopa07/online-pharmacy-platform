@@ -14,11 +14,14 @@ export async function apiRequest(path, { method = "GET", token, body } = {}) {
     headers,
     body: body ? JSON.stringify(body) : undefined
   });
-  const result = await response.json().catch(() => ({}));
+  const result = await response.json().catch(() => null);
 
   if (!response.ok) {
-    throw new Error(result.error || "Request failed. Please try again.");
+    throw new Error(
+      result?.error ||
+        `Request failed (HTTP ${response.status}). Please try again.`
+    );
   }
 
-  return result;
+  return result ?? {};
 }
