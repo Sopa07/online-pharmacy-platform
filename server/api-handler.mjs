@@ -1,8 +1,10 @@
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 
 const MAX_BODY_BYTES = 1_000_000;
 const PRODUCTS_CACHE_TTL_MS = 60_000;
 const DELIVERY_FEE_NAIRA = 2500;
+const PAYSTACK_API = process.env.PAYSTACK_API_BASE || "https://api.paystack.co";
 const COUPON_PRESETS = {
   SHAZZAR10: { type: "percent", value: 10 },
   HEALTH5: { type: "percent", value: 5 },
@@ -112,6 +114,77 @@ function normalizeEmail(email = "") {
 
 function isAuthConfigured() {
   return Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+}
+
+function isPaymentConfigured() {
+  return Boolean(process.env.PAYSTACK_SECRET_KEY);
+}
+
+async function paystackRequest(path, options = {}) {
+  const response = await fetch(`${PAYSTACK_API}${path}`, {
+    ...options,
+    headers: {
+      authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
+      "content-type": "application/json",
+      ...(options.headers || {})
+    }
+  });
+  return response.json();
+}
+
+// Initializes a Paystack transaction for an order. Returns the hosted-checkout
+// URL to send the customer to, or null when payment is not configured/failed.
+async function initializePayment(order, customerEmail, callbackUrl) {
+  if (!isPaymentConfigured()) return null;
+  const result = await paystackRequest("/transaction/initialize", {
+    method: "POST",
+    body: JSON.stringify({
+      email: customerEmail || "customer@shazzarcarepharmacy.com",
+      amount: Math.round(Number(order.total) * 100), // kobo
+      currency: "NGN",
+      reference: order.reference,
+      callback_url: callbackUrl,
+      metadata: {
+        order_reference: order.reference,
+        customer_name: order.customer_name,
+        customer_phone: order.customer_phone
+      }
+    })
+  });
+  return result?.status && result.data?.authorization_url ? result.data.authorization_url : null;
+}
+
+function verifyPaystackSignature(event) {
+  const secret = process.env.PAYSTACK_SECRET_KEY;
+  const rawBody = event.isBase64Encoded
+    ? Buffer.from(event.body || "", "base64").toString("utf8")
+    : event.body || "";
+  const signature = event.headers?.["x-paystack-signature"] || event.headers?.["X-Paystack-Signature"] || "";
+  if (!secret || !signature || !rawBody) return false;
+  const expected = createHmac("sha512", secret).update(rawBody).digest("hex");
+  const provided = Buffer.from(signature);
+  const wanted = Buffer.from(expected);
+  return provided.length === wanted.length && timingSafeEqual(provided, wanted);
+}
+
+async function markOrderPaid(db, reference, paymentReference) {
+  const { data: order } = await db
+    .from("orders")
+    .select("id,payment_status")
+    .eq("reference", reference)
+    .maybeSingle();
+  if (!order) return null;
+  if (order.payment_status !== "paid") {
+    await db
+      .from("orders")
+      .update({
+        payment_status: "paid",
+        payment_reference: paymentReference || reference,
+        paid_at: new Date().toISOString()
+      })
+      .eq("id", order.id);
+  }
+  return order;
 }
 
 // user_metadata is writable by the signed-in user, so roles come only from
@@ -424,7 +497,6 @@ export async function handleApi(event) {
     if (body?.__bodyTooLarge) return json(413, { error: "Request body is too large." }, headers);
     const error = validateOrder(body);
     if (error) return json(400, { error }, headers);
-
     const productIds = [...new Set(body.items.map((item) => Number(item.productId)))];
     const { data: products, error: productsError } = await db
       .from("products")
@@ -488,12 +560,78 @@ export async function handleApi(event) {
       return json(400, { error: itemsError.message }, headers);
     }
 
+    // For prepaid methods, initialize a Paystack hosted checkout. Cash on
+    // delivery keeps payment_status "pending" until the rider collects payment.
+    const siteUrl = event.rawUrl ? new URL(event.rawUrl).origin : "";
+    let authorizationUrl = null;
+    if (body.paymentMethod !== "Cash on Delivery") {
+      authorizationUrl = await initializePayment(
+        order,
+        auth.session.email,
+        siteUrl ? `${siteUrl}/checkout` : undefined
+      );
+    }
+
     return json(201, {
       data: {
         reference: order.reference,
         status: order.status,
         paymentStatus: order.payment_status,
-        receivedAt: order.created_at
+        receivedAt: order.created_at,
+        authorizationUrl,
+        requiresPayment: body.paymentMethod !== "Cash on Delivery"
+      }
+    }, headers);
+  }
+
+  if (method === "POST" && route === "/payments/webhook") {
+    // Paystack sends the raw event body with an HMAC signature. Only mark an
+    // order paid on a verified "charge.success" event; the customer is sent
+    // back to /checkout, which verifies via /payments/verify on load.
+    if (!verifyPaystackSignature(event)) {
+      return json(401, { error: "Invalid webhook signature." }, headers);
+    }
+    const webhookBody = parseBody(event);
+    if (webhookBody?.event === "charge.success" && webhookBody.data?.reference) {
+      await markOrderPaid(db, webhookBody.data.reference, webhookBody.data.reference);
+    }
+    return json(200, { received: true }, headers);
+  }
+
+  if (method === "GET" && route === "/payments/verify") {
+    const auth = await requireAuth(event);
+    if (auth.error) return json(401, { error: auth.error }, headers);
+    const reference = String(query.reference || "").trim();
+    if (!reference) return json(400, { error: "Payment reference is required." }, headers);
+
+    const { data: order } = await db
+      .from("orders")
+      .select("id,reference,total,payment_status,user_id")
+      .eq("reference", reference)
+      .maybeSingle();
+    if (!order || order.user_id !== auth.session.sub) {
+      return json(404, { error: "Order not found for this reference." }, headers);
+    }
+
+    let paymentStatus = order.payment_status;
+    if (paymentStatus !== "paid" && isPaymentConfigured()) {
+      // Confirm with Paystack directly before trusting the callback URL.
+      const result = await paystackRequest(`/transaction/verify/${encodeURIComponent(reference)}`);
+      const verified =
+        result?.status &&
+        result.data?.status === "success" &&
+        Number(result.data.amount) === Math.round(Number(order.total) * 100);
+      if (verified) {
+        await markOrderPaid(db, reference, result.data.reference);
+        paymentStatus = "paid";
+      }
+    }
+
+    return json(200, {
+      data: {
+        reference: order.reference,
+        paymentStatus,
+        total: order.total
       }
     }, headers);
   }

@@ -63,6 +63,10 @@ Required Netlify environment variables:
 
 Deployment notes:
 
+- Run the SQL in [`supabase/schema.sql`](supabase/schema.sql) against your Supabase project (SQL editor) to create the `profiles`, `products`, `orders`, `order_items`, `prescriptions`, `consultations`, and `health_profiles` tables. Signups/logins are handled by Supabase Auth; a trigger mirrors each new user into `profiles`.
+- Import the product catalog with `SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... node supabase/import-products.mjs`.
+- Payments use Paystack hosted checkout (card, bank transfer, USSD, wallet). Set `PAYSTACK_SECRET_KEY` in Netlify. Add the webhook URL `https://<your-site>/api/payments/webhook` in Paystack → Settings → API Keys & Webhooks, with the same secret key as the signing hash. Orders paid by card/transfer are verified server-side before being marked `paid`; `Cash on Delivery` orders stay `pending` until collected.
+
 - The API validates JSON payloads, handles Netlify base64-encoded request bodies, and prices orders from the product catalog server-side (client-supplied amounts are ignored).
 - If the Supabase environment variables are missing, `/api/health` reports `authConfigured: false` and data/auth endpoints return 503.
 - On Supabase projects with email confirmation enabled, registration does not return a session token until the user clicks the emailed link; the app asks them to log in afterwards.

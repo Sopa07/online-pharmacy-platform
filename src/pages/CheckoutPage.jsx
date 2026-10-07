@@ -1,6 +1,6 @@
 import { Minus, Plus, Wallet } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import FormInput from "../components/FormInput";
 import Modal from "../components/Modal";
 import { useAuth } from "../hooks/useAuth";
@@ -22,6 +22,10 @@ const couponPresets = {
   FREEDEL: { type: "delivery", value: 100, label: "Free delivery" }
 };
 
+// Prepaid methods go through Paystack hosted checkout; cash on delivery is
+// settled with the rider and keeps the order marked unpaid until then.
+const paymentMethods = ["Card (Naira)", "Bank Transfer", "USSD", "Mobile Wallet", "Cash on Delivery"];
+
 function CheckoutPage() {
   const { items, subtotal, updateQuantity, removeFromCart, clearCart } = useCart();
   const { addToast } = useToast();
@@ -32,7 +36,38 @@ function CheckoutPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [couponCode, setCouponCode] = useState("");
   const [appliedCoupon, setAppliedCoupon] = useState(null);
+  const [paymentState, setPaymentState] = useState(null); // 'pending' | 'paid' | 'failed'
   const { token, user } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Paystack redirects back to /checkout?reference=... — verify the payment
+  // with the server before showing the confirmation.
+  useEffect(() => {
+    const reference = searchParams.get("reference");
+    if (!reference || !token) return;
+    setSearchParams({}, { replace: true });
+    (async () => {
+      try {
+        const result = await apiRequest(`/payments/verify?reference=${encodeURIComponent(reference)}`, { token });
+        if (result.data.paymentStatus === "paid") {
+          setPaymentState("paid");
+          setPlacedOrder({ reference: result.data.reference, total: result.data.total, paymentMethod: "Paid online" });
+          setSuccessModalOpen(true);
+          addToast("Payment confirmed. Your order is being prepared.");
+          clearCart();
+          setDelivery(deliveryDefaults);
+          setAppliedCoupon(null);
+          setCouponCode("");
+        } else {
+          setPaymentState("pending");
+          addToast("Payment not completed yet — your order is saved. You can retry payment.", "error");
+        }
+      } catch (error) {
+        addToast(error.message, "error");
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, token]);
 
   useEffect(() => {
     if (user) {
@@ -101,6 +136,16 @@ function CheckoutPage() {
         address: delivery.address,
         total
       });
+
+      if (result.data.requiresPayment && result.data.authorizationUrl) {
+        // Prepaid: hand the customer to Paystack hosted checkout. The cart is
+        // cleared only after payment is confirmed on the way back.
+        addToast("Redirecting to secure payment...");
+        window.location.assign(result.data.authorizationUrl);
+        return;
+      }
+
+      setPaymentState(result.data.requiresPayment ? "pending" : "paid");
       setSuccessModalOpen(true);
       addToast("Order placed successfully.");
       clearCart();
@@ -252,7 +297,7 @@ function CheckoutPage() {
           <section className="card-soft p-6">
             <h2 className="text-lg font-semibold text-slate-900">Payment Options</h2>
             <div className="mt-4 space-y-3">
-              {["Card (Naira)", "Bank Transfer", "USSD", "Mobile Wallet"].map((method) => (
+              {paymentMethods.map((method) => (
                 <label
                   key={method}
                   className={`flex cursor-pointer items-center gap-3 rounded-xl border p-3 transition ${
@@ -349,12 +394,22 @@ function CheckoutPage() {
         title="Order Confirmed"
       >
         <div className="space-y-3 text-sm text-slate-700">
-          <p>Your order has been received and is being prepared for delivery.</p>
+          <p>
+            {paymentState === "pending"
+              ? "Your order is saved. Complete payment to have it prepared for delivery."
+              : "Your order has been received and is being prepared for delivery."}
+          </p>
           {placedOrder?.reference ? (
             <p>
               Reference: <span className="font-semibold text-slate-900">{placedOrder.reference}</span>
             </p>
           ) : null}
+          <p>
+            Payment status:{" "}
+            <span className={`font-semibold ${paymentState === "paid" ? "text-emerald-700" : "text-amber-700"}`}>
+              {paymentState === "paid" ? "Paid" : "Pending payment"}
+            </span>
+          </p>
           <p>
             Payment method: <span className="font-semibold text-slate-900">{placedOrder?.paymentMethod || paymentMethod}</span>
           </p>
