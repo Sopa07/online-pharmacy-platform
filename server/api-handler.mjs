@@ -29,11 +29,20 @@ function getSupabase() {
       console.warn(supabaseInitError);
       return null;
     }
+    // Real keys are legacy JWTs (eyJ…) or new-format sb_secret_/sb_publishable_
+    // tokens. Anything else is almost always a masked or mangled copy.
+    const keyShapeOk = /^(eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+|sb_(secret|publishable)_[A-Za-z0-9_-]+)$/.test(supabaseServiceKey);
+    if (!keyShapeOk) {
+      supabaseInitError = `SUPABASE_SERVICE_ROLE_KEY doesn't look like a real key (got ${describeSecret(supabaseServiceKey)}). Real keys start with eyJ (long JWT) or sb_secret_ and contain only letters, digits, _ and - — if you see • or * characters you copied the MASKED value: click "Reveal" in Supabase → Settings → API Keys first`;
+      console.warn(supabaseInitError);
+      return null;
+    }
     try {
       supabaseClient = createClient(cleaned, supabaseServiceKey);
     } catch (error) {
-      supabaseInitError = `SUPABASE_SERVICE_ROLE_KEY was rejected (got ${describeSecret(supabaseServiceKey)}): ${error.message}. It must be the full service_role key from Supabase → Settings → API Keys (starts with eyJ or sb_secret_)`;
+      supabaseInitError = `Supabase client failed to start: "${error.message}" (key on file: ${describeSecret(supabaseServiceKey)}; URL on file: "${cleaned}")`;
       console.warn(supabaseInitError);
+      console.warn(error.stack || String(error));
       return null;
     }
   }
@@ -41,10 +50,13 @@ function getSupabase() {
 }
 
 // Safe, masked fingerprint of a secret for error messages: never the value,
-// just enough to spot a truncated or wrong variable.
+// just enough to spot a truncated, wrong, or masked copy.
 function describeSecret(value) {
-  const prefix = value.slice(0, 4);
-  return `a ${value.length}-char value starting "${prefix}..."`;
+  const unusual = value.match(/[^A-Za-z0-9_\-.]/g);
+  const unusualNote = unusual
+    ? ` — and it contains ${unusual.length} character(s) real keys never have, like "${[...new Set(unusual)].slice(0, 3).join("")}" (masked value?)`
+    : "";
+  return `a ${value.length}-char value starting "${value.slice(0, 4)}..." ending "...${value.slice(-4)}"${unusualNote}`;
 }
 
 function getAdminEmails() {
@@ -428,7 +440,7 @@ async function handleApiInner(event) {
       // Masked env fingerprints (values never exposed) to debug config remotely.
       env: {
         supabaseUrlSeen: rawUrl ? `"${rawUrl.slice(0, 40)}${rawUrl.length > 40 ? "..." : ""}" (${rawUrl.length} chars)` : "(empty)",
-        serviceKeySeen: rawKey ? `a ${rawKey.length}-char value starting "${rawKey.slice(0, 4)}..."` : "(empty)",
+        serviceKeySeen: rawKey ? describeSecret(rawKey) : "(empty)",
         paystackSeen: process.env.PAYSTACK_SECRET_KEY ? "set" : "(empty)"
       },
       timestamp: new Date().toISOString()
