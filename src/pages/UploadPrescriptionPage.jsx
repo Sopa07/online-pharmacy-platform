@@ -1,7 +1,9 @@
 import { FileText, UploadCloud } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import FormInput from "../components/FormInput";
+import { useAuth } from "../hooks/useAuth";
 import { useToast } from "../hooks/useToast";
+import { apiRequest } from "../utils/api";
 
 const allowedTypes = ["application/pdf", "image/jpeg", "image/png"];
 
@@ -19,6 +21,21 @@ function UploadPrescriptionPage() {
   const [previewUrl, setPreviewUrl] = useState("");
   const [isDragging, setIsDragging] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [reference, setReference] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const { token, user } = useAuth();
+
+  useEffect(() => {
+    if (user) {
+      setForm((prev) => ({
+        ...prev,
+        fullName: prev.fullName || user.name || "",
+        phone: prev.phone || user.phone || "",
+        email: prev.email || user.email || ""
+      }));
+    }
+  }, [user]);
+
   const { addToast } = useToast();
 
   const isImage = useMemo(() => file && file.type.startsWith("image/"), [file]);
@@ -52,16 +69,47 @@ function UploadPrescriptionPage() {
     handleFile(event.dataTransfer.files?.[0]);
   };
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
     if (!file) {
       addToast("Please upload a prescription file first.", "error");
       return;
     }
-    setSubmitted(true);
-    addToast("Prescription uploaded successfully.");
-    setForm(initialForm);
-    setFile(null);
+    if (!token) {
+      addToast("Please log in before submitting a prescription.", "error");
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const result = await apiRequest("/prescriptions", {
+        method: "POST",
+        token,
+        body: {
+          patient: {
+            name: form.fullName,
+            phone: form.phone,
+            email: form.email,
+            address: form.address
+          },
+          prescription: {
+            fileName: file.name,
+            fileType: file.type,
+            fileSize: file.size
+          }
+        }
+      });
+
+      setReference(result.data.reference);
+      setSubmitted(true);
+      addToast("Prescription submitted successfully.");
+      setForm(initialForm);
+      setFile(null);
+    } catch (error) {
+      addToast(error.message, "error");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -171,16 +219,17 @@ function UploadPrescriptionPage() {
           </div>
           <button
             type="submit"
-            className="mt-5 rounded-full bg-accent-500 px-6 py-3 text-sm font-semibold text-white transition hover:bg-accent-600"
+            disabled={isSubmitting}
+            className="mt-5 rounded-full bg-accent-500 px-6 py-3 text-sm font-semibold text-white transition hover:bg-accent-600 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            Submit Prescription
+            {isSubmitting ? "Submitting..." : "Submit Prescription"}
           </button>
         </section>
       </form>
 
       {submitted ? (
         <section className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-semibold text-emerald-700">
-          A pharmacist will review your prescription shortly.
+          A pharmacist will review your prescription shortly{reference ? ` (${reference})` : "."}
         </section>
       ) : null}
     </div>

@@ -3,6 +3,7 @@ import { useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import SearchBar from "./SearchBar";
 import BrandLogo from "./BrandLogo";
+import { useAuth } from "../hooks/useAuth";
 
 const links = [
   { to: "/", label: "Home" },
@@ -17,6 +18,7 @@ function Navbar({ cartCount, onCartOpen, searchSuggestions }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [query, setQuery] = useState("");
   const navigate = useNavigate();
+  const { isAuthenticated, user } = useAuth();
 
   const navigateToProducts = (searchText) => {
     const normalized = searchText.trim();
@@ -95,12 +97,21 @@ function Navbar({ cartCount, onCartOpen, searchSuggestions }) {
             </NavLink>
           ))}
         </div>
-        <NavLink
-          to="/healthcare/login"
-          className="ml-auto inline-flex items-center gap-2 rounded-full bg-accent-500 px-5 py-2 text-sm font-semibold text-white shadow-soft transition hover:-translate-y-0.5 hover:bg-accent-600"
-        >
-          Login / Sign Up
-        </NavLink>
+        {isAuthenticated ? (
+          <NavLink
+            to="/healthcare"
+            className="ml-auto inline-flex items-center gap-2 rounded-full bg-brand-100 px-5 py-2 text-sm font-semibold text-brand-800 transition hover:bg-brand-200"
+          >
+            Hi, {user?.name?.split(" ")[0]}
+          </NavLink>
+        ) : (
+          <NavLink
+            to="/healthcare/login"
+            className="ml-auto inline-flex items-center gap-2 rounded-full bg-accent-500 px-5 py-2 text-sm font-semibold text-white shadow-soft transition hover:-translate-y-0.5 hover:bg-accent-600"
+          >
+            Login / Sign Up
+          </NavLink>
+        )}
       </div>
 
       {menuOpen ? (
@@ -119,13 +130,23 @@ function Navbar({ cartCount, onCartOpen, searchSuggestions }) {
               {link.label}
             </NavLink>
           ))}
-          <NavLink
-            to="/healthcare/login"
-            onClick={() => setMenuOpen(false)}
-            className="mt-2 block rounded-lg bg-accent-500 px-3 py-2 text-sm font-semibold text-white shadow-soft"
-          >
-            Login / Sign Up
-          </NavLink>
+          {isAuthenticated ? (
+            <NavLink
+              to="/healthcare"
+              onClick={() => setMenuOpen(false)}
+              className="mt-2 block rounded-lg bg-brand-100 px-3 py-2 text-sm font-semibold text-brand-800"
+            >
+              Hi, {user?.name?.split(" ")[0]}
+            </NavLink>
+          ) : (
+            <NavLink
+              to="/healthcare/login"
+              onClick={() => setMenuOpen(false)}
+              className="mt-2 block rounded-lg bg-accent-500 px-3 py-2 text-sm font-semibold text-white shadow-soft"
+            >
+              Login / Sign Up
+            </NavLink>
+          )}
         </div>
       ) : null}
     </header>

@@ -21,7 +21,7 @@ import { formatNaira } from "../utils/formatCurrency";
 const features = [
   {
     title: "Fast Delivery",
-    description: "Same-day dispatch in major Nigerian cities with discreet packaging.",
+    description: "Same-day delivery in Lagos with discreet packaging.",
     icon: Truck
   },
   {
@@ -53,7 +53,12 @@ function HomePage() {
     return () => clearTimeout(timer);
   }, []);
 
-  const featuredProducts = useMemo(() => products.slice(0, 8), []);
+  const featuredProducts = useMemo(() => {
+    const withPhotos = products.filter(
+      (product) => product.image && !product.image.startsWith("/product-placeholders/")
+    );
+    return (withPhotos.length >= 8 ? withPhotos : products).slice(0, 8);
+  }, []);
   const bulletinPreview = useMemo(() => articles.slice(0, 3), []);
 
   const scrollCarousel = (direction = "next") => {
@@ -84,7 +89,7 @@ function HomePage() {
               <Activity size={14} />
               24/7 Digital Pharmacy
             </p>
-            <h1 className="mt-5 text-4xl font-extrabold leading-tight text-slate-900 sm:text-5xl">
+            <h1 className="mt-5 text-4xl font-extrabold leading-tight text-purple-700 sm:text-5xl">
               Your Trusted Online Pharmacy
             </h1>
             <p className="mt-4 max-w-2xl text-base leading-relaxed text-slate-600 sm:text-lg">
@@ -112,7 +117,7 @@ function HomePage() {
             <div className="mt-4 space-y-4">
               <div className="rounded-2xl bg-brand-50 p-4">
                 <p className="text-sm text-slate-600">Average Delivery Time</p>
-                <p className="mt-1 text-2xl font-bold text-brand-700">3h 05m</p>
+                <p className="mt-1 text-2xl font-bold text-brand-700">45 mins</p>
               </div>
               <div className="rounded-2xl bg-accent-50 p-4">
                 <p className="text-sm text-slate-600">Consultation Satisfaction</p>
@@ -149,9 +154,9 @@ function HomePage() {
         <div className="card-soft p-6">
           <p className="text-sm font-semibold text-slate-700">Why create an account?</p>
           <ul className="mt-3 space-y-2 text-sm text-slate-600">
-            <li>Saved prescriptions and consultation history</li>
+            <li className="font-semibold text-purple-700">Saved prescriptions and consultation history</li>
             <li>Personalized medication reminders</li>
-            <li>Faster checkout and refill requests</li>
+            <li className="font-semibold text-purple-700">Faster checkout and refill requests</li>
           </ul>
         </div>
       </section>

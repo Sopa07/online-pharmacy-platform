@@ -24,9 +24,9 @@ function Footer() {
         <div>
           <h4 className="font-semibold text-slate-900">Contact</h4>
           <ul className="mt-2 space-y-1 text-sm text-slate-600">
-            <li>Email: care@shazzarpharmacy.ng</li>
-            <li>Phone: +234 (0) 700 PHARMACY</li>
-            <li>Address: 18 Admiralty Way, Lekki Phase 1, Lagos</li>
+            <li>Email: Support@shazzarcarepharmacy.com</li>
+            <li>Phone: +234 902 208 7353</li>
+            <li>Address: 62/64 Addo road, (Opposite Pump and Sell) Ajah</li>
           </ul>
         </div>
       </div>

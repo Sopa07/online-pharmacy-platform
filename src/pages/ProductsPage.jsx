@@ -162,7 +162,7 @@ function ProductsPage() {
 
             <section>
               <h3 className="mb-2 text-sm font-semibold text-slate-700">Popular Brands</h3>
-              <div className="space-y-2">
+              <div className="space-y-2 max-h-48 overflow-y-auto pr-2 scrollbar-thin">
                 {BRAND_OPTIONS.map((brand) => (
                   <label key={brand} className="flex cursor-pointer items-center gap-2 text-sm text-slate-700">
                     <input

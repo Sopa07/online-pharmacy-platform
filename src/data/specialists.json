@@ -5,7 +5,7 @@
     "specialization": "Clinical Pharmacist",
     "availability": "Mon - Fri, 9:00 AM - 4:00 PM WAT",
     "rating": 4.9,
-    "photo": "https://images.unsplash.com/photo-1559839734-2b71ea197ec2?auto=format&fit=crop&w=700&q=80"
+    "photo": "/product-images/aciclovir-cream-bp-5-ww-15g.jpg"
   },
   {
     "id": 2,
@@ -13,7 +13,7 @@
     "specialization": "General Practitioner",
     "availability": "Mon - Sat, 10:00 AM - 6:00 PM WAT",
     "rating": 4.8,
-    "photo": "https://images.unsplash.com/photo-1537368910025-700350fe46c7?auto=format&fit=crop&w=700&q=80"
+    "photo": "/product-images/actifed-dry-cough-100ml.jfif"
   },
   {
     "id": 3,
@@ -21,7 +21,7 @@
     "specialization": "Dermatology",
     "availability": "Tue - Fri, 11:00 AM - 5:00 PM WAT",
     "rating": 4.7,
-    "photo": "https://images.unsplash.com/photo-1614608682850-e0d6ed316d47?auto=format&fit=crop&w=700&q=80"
+    "photo": "/product-images/alka-seltzer-plus-cold-flu-nigh-6-pk.jfif"
   },
   {
     "id": 4,
@@ -29,7 +29,7 @@
     "specialization": "Endocrinology",
     "availability": "Mon - Thu, 8:30 AM - 3:30 PM WAT",
     "rating": 4.9,
-    "photo": "https://images.unsplash.com/photo-1582750433449-648ed127bb54?auto=format&fit=crop&w=700&q=80"
+    "photo": "/product-images/amatem-20120mg-24-softgel.jfif"
   },
   {
     "id": 5,
@@ -37,7 +37,7 @@
     "specialization": "Pediatrics",
     "availability": "Mon - Fri, 9:30 AM - 4:30 PM WAT",
     "rating": 4.8,
-    "photo": "https://images.unsplash.com/photo-1594824475317-df2b5a97cb7c?auto=format&fit=crop&w=700&q=80"
+    "photo": "/product-images/amatem-forte-6-tabs.jfif"
   },
   {
     "id": 6,
@@ -45,6 +45,6 @@
     "specialization": "Cardiology",
     "availability": "Wed - Sat, 12:00 PM - 7:00 PM WAT",
     "rating": 4.6,
-    "photo": "https://images.unsplash.com/photo-1622253692010-333f2da6031d?auto=format&fit=crop&w=700&q=80"
+    "photo": "/product-images/amcard-10mg-10-strips-amlodipine.jpg"
   }
 ]

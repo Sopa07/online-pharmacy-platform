@@ -1,10 +1,12 @@
 import { Minus, Plus, Wallet } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import FormInput from "../components/FormInput";
 import Modal from "../components/Modal";
+import { useAuth } from "../hooks/useAuth";
 import { useCart } from "../hooks/useCart";
 import { useToast } from "../hooks/useToast";
+import { apiRequest } from "../utils/api";
 import { formatNaira } from "../utils/formatCurrency";
 
 const deliveryDefaults = {
@@ -27,8 +29,20 @@ function CheckoutPage() {
   const [paymentMethod, setPaymentMethod] = useState("Card (Naira)");
   const [successModalOpen, setSuccessModalOpen] = useState(false);
   const [placedOrder, setPlacedOrder] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [couponCode, setCouponCode] = useState("");
   const [appliedCoupon, setAppliedCoupon] = useState(null);
+  const { token, user } = useAuth();
+
+  useEffect(() => {
+    if (user) {
+      setDelivery((prev) => ({
+        ...prev,
+        name: prev.name || user.name || "",
+        phone: prev.phone || user.phone || ""
+      }));
+    }
+  }, [user]);
 
   const baseDeliveryFee = items.length > 0 ? 2500 : 0;
   const deliveryFee =
@@ -39,21 +53,65 @@ function CheckoutPage() {
       : 0;
   const total = subtotal + deliveryFee - discountAmount;
 
-  const handlePlaceOrder = (event) => {
+  const handlePlaceOrder = async (event) => {
     event.preventDefault();
     if (items.length === 0) {
       addToast("Your cart is empty. Add medicines before checkout.", "error");
       return;
     }
-    setPlacedOrder({
-      paymentMethod,
-      address: delivery.address,
-      total
-    });
-    setSuccessModalOpen(true);
-    addToast("Order placed successfully.");
-    clearCart();
-    setDelivery(deliveryDefaults);
+    if (!token) {
+      addToast("Please log in before placing an order.", "error");
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const result = await apiRequest("/orders", {
+        method: "POST",
+        token,
+        body: {
+          customer: {
+            name: delivery.name,
+            phone: delivery.phone
+          },
+          delivery: {
+            address: delivery.address,
+            instructions: delivery.instructions
+          },
+          paymentMethod,
+          coupon: appliedCoupon?.code || null,
+          totals: {
+            subtotal,
+            deliveryFee,
+            discountAmount,
+            total
+          },
+          items: items.map((item) => ({
+            productId: item.id,
+            name: item.name,
+            quantity: item.quantity,
+            unitPrice: item.price
+          }))
+        }
+      });
+
+      setPlacedOrder({
+        reference: result.data.reference,
+        paymentMethod,
+        address: delivery.address,
+        total
+      });
+      setSuccessModalOpen(true);
+      addToast("Order placed successfully.");
+      clearCart();
+      setDelivery(deliveryDefaults);
+      setAppliedCoupon(null);
+      setCouponCode("");
+    } catch (error) {
+      addToast(error.message, "error");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleApplyCoupon = (event) => {
@@ -82,6 +140,19 @@ function CheckoutPage() {
       </div>
 
       <form onSubmit={handlePlaceOrder} className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+        {!token ? (
+          <div className="xl:col-span-2 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-850 flex flex-wrap items-center justify-between gap-3 shadow-sm">
+            <div>
+              <span className="font-semibold text-rose-950">Authentication Required:</span> You must be logged in to place an order.
+            </div>
+            <Link
+              to="/healthcare/login?redirect=/checkout"
+              className="rounded-full bg-accent-500 px-4 py-2 text-xs font-semibold text-white hover:bg-accent-600 transition"
+            >
+              Log in / Sign up
+            </Link>
+          </div>
+        ) : null}
         <div className="space-y-6">
           <section className="card-soft p-6">
             <h2 className="text-lg font-semibold text-slate-900">Cart Summary</h2>
@@ -260,9 +331,10 @@ function CheckoutPage() {
             </div>
             <button
               type="submit"
-              className="mt-5 w-full rounded-full bg-accent-500 px-6 py-3 text-sm font-semibold text-white transition hover:bg-accent-600"
+              disabled={isSubmitting || !token}
+              className="mt-5 w-full rounded-full bg-accent-500 px-6 py-3 text-sm font-semibold text-white transition hover:bg-accent-600 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              Place Order
+              {isSubmitting ? "Placing order..." : !token ? "Log in to Place Order" : "Place Order"}
             </button>
           </section>
         </div>
@@ -278,6 +350,11 @@ function CheckoutPage() {
       >
         <div className="space-y-3 text-sm text-slate-700">
           <p>Your order has been received and is being prepared for delivery.</p>
+          {placedOrder?.reference ? (
+            <p>
+              Reference: <span className="font-semibold text-slate-900">{placedOrder.reference}</span>
+            </p>
+          ) : null}
           <p>
             Payment method: <span className="font-semibold text-slate-900">{placedOrder?.paymentMethod || paymentMethod}</span>
           </p>

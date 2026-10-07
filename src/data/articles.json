@@ -3,36 +3,36 @@
     "id": 1,
     "headline": "Preventing Malaria During Rainy Season",
     "summary": "Simple prevention steps including mosquito net use, environmental hygiene, and early symptom response.",
-    "image": "https://images.unsplash.com/photo-1584362917165-526a968579e8?auto=format&fit=crop&w=900&q=80"
+    "image": "/product-images/amatem-forte-6-tabs.jfif"
   },
   {
     "id": 2,
     "headline": "Managing High Blood Pressure in Nigeria",
     "summary": "Affordable lifestyle choices and medication adherence tips to reduce long-term heart risks.",
-    "image": "https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?auto=format&fit=crop&w=900&q=80"
+    "image": "/product-images/amcard-10mg-10-strips-amlodipine.jpg"
   },
   {
     "id": 3,
     "headline": "Healthy Diet Tips with Local Nigerian Foods",
     "summary": "How to balance staples like rice, beans, vegetables, and proteins for better daily wellness.",
-    "image": "https://images.unsplash.com/photo-1498837167922-ddd27525d352?auto=format&fit=crop&w=900&q=80"
+    "image": "/medical-images/healthy-food.jpg"
   },
   {
     "id": 4,
     "headline": "Safe Use of Medicines: Avoiding Self-Medication Risks",
     "summary": "Know when to consult a licensed pharmacist and why dosage compliance matters.",
-    "image": "https://images.unsplash.com/photo-1471864190281-a93a3070b6de?auto=format&fit=crop&w=900&q=80"
+    "image": "/medical-images/blister-tablets.jpg"
   },
   {
     "id": 5,
     "headline": "Typhoid Prevention and Early Warning Signs",
     "summary": "Water hygiene, food handling, and symptom recognition to protect your household.",
-    "image": "https://images.unsplash.com/photo-1584982751601-97dcc096659c?auto=format&fit=crop&w=900&q=80"
+    "image": "/medical-images/clean-water.jpg"
   },
   {
     "id": 6,
     "headline": "Managing Heat and Hydration in Dry Season",
     "summary": "Practical hydration and skin-care routines for hot weather conditions.",
-    "image": "https://images.unsplash.com/photo-1616394584738-fc6e612e71b9?auto=format&fit=crop&w=900&q=80"
+    "image": "/medical-images/glass-of-water.jpg"
   }
 ]

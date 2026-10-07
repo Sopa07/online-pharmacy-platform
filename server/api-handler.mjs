@@ -1,19 +1,49 @@
-import fs from "node:fs/promises";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { createClient } from "@supabase/supabase-js";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const rootDir = path.resolve(__dirname, "..");
-const productsPath = path.join(rootDir, "src", "data", "products.json");
+const MAX_BODY_BYTES = 1_000_000;
+const PRODUCTS_CACHE_TTL_MS = 60_000;
+const DELIVERY_FEE_NAIRA = 2500;
+const COUPON_PRESETS = {
+  SHAZZAR10: { type: "percent", value: 10 },
+  HEALTH5: { type: "percent", value: 5 },
+  FREEDEL: { type: "delivery", value: 100 }
+};
 
-let productsCache;
+// createClient throws on empty credentials, so only build the client when both env vars are present.
+let supabaseClient = null;
+let productsCache = null;
 
-async function getProducts() {
-  if (!productsCache) {
-    const productsJson = await fs.readFile(productsPath, "utf8");
-    productsCache = JSON.parse(productsJson);
+function getSupabase() {
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl || !supabaseServiceKey) return null;
+  if (!supabaseClient) {
+    supabaseClient = createClient(supabaseUrl, supabaseServiceKey);
   }
-  return productsCache;
+  return supabaseClient;
+}
+
+function getAdminEmails() {
+  return String(process.env.ADMIN_EMAILS || "")
+    .split(",")
+    .map((email) => normalizeEmail(email))
+    .filter(Boolean);
+}
+
+async function getProducts(db) {
+  if (productsCache && Date.now() - productsCache.fetchedAt < PRODUCTS_CACHE_TTL_MS) {
+    return productsCache.data;
+  }
+  const { data, error } = await db
+    .from("products")
+    .select("*")
+    .order("popularity", { ascending: false });
+
+  if (error) {
+    throw new Error(`Failed to load products: ${error.message}`);
+  }
+  productsCache = { data, fetchedAt: Date.now() };
+  return data;
 }
 
 function json(statusCode, body, headers = {}) {
@@ -21,13 +51,28 @@ function json(statusCode, body, headers = {}) {
     statusCode,
     headers: {
       "content-type": "application/json; charset=utf-8",
-      "access-control-allow-origin": process.env.API_ALLOWED_ORIGIN || "*",
+      "access-control-allow-origin": headers.origin || process.env.API_ALLOWED_ORIGIN || "null",
       "access-control-allow-methods": "GET,POST,OPTIONS",
       "access-control-allow-headers": "content-type,authorization",
+      "cache-control": "no-store",
+      "x-content-type-options": "nosniff",
+      "referrer-policy": "strict-origin-when-cross-origin",
       ...headers
     },
-    body: JSON.stringify(body)
+    body: statusCode === 204 ? "" : JSON.stringify(body)
   };
+}
+
+function getResponseHeaders(event) {
+  const origin = event.headers?.origin || event.headers?.Origin || "";
+  const allowedOrigins = String(process.env.API_ALLOWED_ORIGIN || "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+  if (!origin || allowedOrigins.length === 0) return {};
+  if (allowedOrigins.includes(origin)) return { origin };
+  return {};
 }
 
 function getRoute(event) {
@@ -47,11 +92,83 @@ function getQuery(event) {
 
 function parseBody(event) {
   if (!event.body) return {};
+  const rawBody = event.isBase64Encoded
+    ? Buffer.from(event.body, "base64").toString("utf8")
+    : event.body;
+
+  if (Buffer.byteLength(rawBody, "utf8") > MAX_BODY_BYTES) {
+    return { __bodyTooLarge: true };
+  }
   try {
-    return JSON.parse(event.body);
+    return JSON.parse(rawBody);
   } catch {
     return null;
   }
+}
+
+function normalizeEmail(email = "") {
+  return String(email).trim().toLowerCase();
+}
+
+function isAuthConfigured() {
+  return Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+}
+
+// user_metadata is writable by the signed-in user, so roles come only from
+// app_metadata (service-role writable) or the ADMIN_EMAILS allowlist.
+function resolveRole(user) {
+  return (
+    user.app_metadata?.role ||
+    (getAdminEmails().includes(normalizeEmail(user.email)) ? "admin" : "customer")
+  );
+}
+
+function getBearerToken(event) {
+  const authorization = event.headers?.authorization || event.headers?.Authorization || "";
+  const match = authorization.match(/^Bearer\s+(.+)$/i);
+  return match?.[1]?.trim() || "";
+}
+
+async function verifySessionToken(token) {
+  const db = getSupabase();
+  if (!token || !db) return null;
+  const { data: { user }, error } = await db.auth.getUser(token);
+  if (error || !user) return null;
+
+  return {
+    sub: user.id,
+    email: normalizeEmail(user.email),
+    name: user.user_metadata?.name || "Patient",
+    phone: user.user_metadata?.phone || "",
+    role: resolveRole(user)
+  };
+}
+
+async function requireAuth(event) {
+  const session = await verifySessionToken(getBearerToken(event));
+  return session ? { session } : { error: "Authentication required." };
+}
+
+async function requireAdmin(event) {
+  const auth = await requireAuth(event);
+  if (auth.error) return auth;
+  if (auth.session.role !== "admin") return { error: "Admin access required.", status: 403 };
+  return auth;
+}
+
+function publicProduct(product) {
+  const { sourceImageUrl, ...safeProduct } = product;
+  return safeProduct;
+}
+
+function publicUser(user) {
+  return {
+    id: user.id || user.sub,
+    name: user.name,
+    email: user.email,
+    phone: user.phone,
+    role: user.role || "customer"
+  };
 }
 
 function paginate(items, query) {
@@ -108,15 +225,78 @@ function createReference(prefix) {
 function validateOrder(body) {
   if (!body || typeof body !== "object") return "Request body must be valid JSON.";
   if (!Array.isArray(body.items) || body.items.length === 0) return "Order must include at least one item.";
-  if (!body.customer?.name || !body.customer?.phone) return "Customer name and phone are required.";
-  if (!body.delivery?.address) return "Delivery address is required.";
+  if (typeof body.customer?.name !== "string" || !body.customer.name.trim()) return "Customer name is required.";
+  if (typeof body.customer?.phone !== "string" || !body.customer.phone.trim()) return "Customer phone is required.";
+  if (typeof body.delivery?.address !== "string" || !body.delivery.address.trim()) return "Delivery address is required.";
+  if (
+    body.items.some(
+      (item) =>
+        !item ||
+        typeof item !== "object" ||
+        !Number.isFinite(Number(item.productId)) ||
+        !Number.isInteger(Number(item.quantity)) ||
+        Number(item.quantity) < 1
+    )
+  ) {
+    return "Every order item must include a valid productId and quantity.";
+  }
   return null;
 }
 
 function validatePrescription(body) {
   if (!body || typeof body !== "object") return "Request body must be valid JSON.";
-  if (!body.patient?.name || !body.patient?.phone) return "Patient name and phone are required.";
-  if (!body.prescription?.fileName) return "Prescription file name is required.";
+  if (typeof body.patient?.name !== "string" || !body.patient.name.trim()) return "Patient name is required.";
+  if (typeof body.patient?.phone !== "string" || !body.patient.phone.trim()) return "Patient phone is required.";
+  if (typeof body.prescription?.fileName !== "string" || !body.prescription.fileName.trim()) {
+    return "Prescription file name is required.";
+  }
+  if (body.prescription?.fileType && !["application/pdf", "image/jpeg", "image/png"].includes(body.prescription.fileType)) {
+    return "Prescription file type must be PDF, JPG, or PNG.";
+  }
+  return null;
+}
+
+function validateConsultation(body) {
+  if (!body || typeof body !== "object") return "Request body must be valid JSON.";
+  if (body.specialistId == null || body.specialistId === "" || !Number.isFinite(Number(body.specialistId))) {
+    return "Specialist is required.";
+  }
+  if (typeof body.specialistName !== "string" || !body.specialistName.trim()) return "Specialist name is required.";
+  if (typeof body.date !== "string" || !body.date.trim()) return "Consultation date is required.";
+  if (typeof body.timeSlot !== "string" || !body.timeSlot.trim()) return "Time slot is required.";
+  if (typeof body.reason !== "string" || !body.reason.trim()) return "Reason for consultation is required.";
+  if (!["video", "chat"].includes(body.method)) return "Consultation method must be video or chat.";
+  return null;
+}
+
+function validateHealthProfile(body) {
+  if (!body || typeof body !== "object") return "Request body must be valid JSON.";
+  if (body.age != null && body.age !== "" && (!Number.isFinite(Number(body.age)) || Number(body.age) < 1)) {
+    return "Age must be valid.";
+  }
+  if (body.weight != null && body.weight !== "" && (!Number.isFinite(Number(body.weight)) || Number(body.weight) < 1)) {
+    return "Weight must be valid.";
+  }
+  return null;
+}
+
+function validateRegister(body) {
+  if (!body || typeof body !== "object") return "Request body must be valid JSON.";
+  if (typeof body.name !== "string" || !body.name.trim()) return "Full name is required.";
+  if (typeof body.email !== "string" || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizeEmail(body.email))) {
+    return "A valid email is required.";
+  }
+  if (typeof body.phone !== "string" || !body.phone.trim()) return "Phone number is required.";
+  if (typeof body.password !== "string" || body.password.length < 8) return "Password must be at least 8 characters.";
+  return null;
+}
+
+function validateLogin(body) {
+  if (!body || typeof body !== "object") return "Request body must be valid JSON.";
+  if (typeof body.email !== "string" || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizeEmail(body.email))) {
+    return "A valid email is required.";
+  }
+  if (typeof body.password !== "string" || !body.password) return "Password is required.";
   return null;
 }
 
@@ -124,62 +304,365 @@ export async function handleApi(event) {
   const method = event.httpMethod || event.requestContext?.http?.method || "GET";
   const route = getRoute(event);
   const query = getQuery(event);
+  const headers = getResponseHeaders(event);
 
   if (method === "OPTIONS") {
-    return json(204, {});
+    return json(204, {}, headers);
   }
 
   if (method === "GET" && (route === "/" || route === "/health")) {
     return json(200, {
       ok: true,
       service: "shazzar-pharmacy-api",
+      authConfigured: isAuthConfigured(),
       timestamp: new Date().toISOString()
+    }, headers);
+  }
+
+  const db = getSupabase();
+  if (!db) {
+    return json(503, { error: "Backend services are not configured for this deployment." }, headers);
+  }
+
+  if (method === "GET" && route === "/auth/me") {
+    const auth = await requireAuth(event);
+    if (auth.error) return json(401, { error: auth.error }, headers);
+    return json(200, { data: { user: publicUser(auth.session) } }, headers);
+  }
+
+  if (method === "POST" && route === "/auth/register") {
+    const body = parseBody(event);
+    if (body?.__bodyTooLarge) return json(413, { error: "Request body is too large." }, headers);
+    const error = validateRegister(body);
+    if (error) return json(400, { error }, headers);
+
+    const email = normalizeEmail(body.email);
+    const { data, error: signUpError } = await db.auth.signUp({
+      email,
+      password: body.password,
+      options: {
+        data: {
+          name: body.name.trim(),
+          phone: body.phone.trim()
+        }
+      }
     });
+
+    if (signUpError) {
+      if (signUpError.status === 409 || /already (exists|registered)/i.test(signUpError.message)) {
+        return json(409, { error: "An account already exists for this email. Please log in." }, headers);
+      }
+      return json(400, { error: signUpError.message }, headers);
+    }
+
+    const token = data.session?.access_token || "";
+    return json(201, {
+      data: {
+        user: {
+          id: data.user.id,
+          name: data.user.user_metadata.name,
+          email: data.user.email,
+          phone: data.user.user_metadata.phone,
+          role: resolveRole(data.user)
+        },
+        token,
+        // With email confirmation enabled, Supabase returns no session until the
+        // user clicks the emailed link — the client must not treat this as a login.
+        needsConfirmation: !token
+      }
+    }, headers);
+  }
+
+  if (method === "POST" && route === "/auth/login") {
+    const body = parseBody(event);
+    if (body?.__bodyTooLarge) return json(413, { error: "Request body is too large." }, headers);
+    const error = validateLogin(body);
+    if (error) return json(400, { error }, headers);
+
+    const email = normalizeEmail(body.email);
+    const { data, error: signInError } = await db.auth.signInWithPassword({
+      email,
+      password: body.password
+    });
+
+    if (signInError) {
+      return json(401, { error: "Invalid email or password. Create an account first if you have not registered." }, headers);
+    }
+
+    return json(200, {
+      data: {
+        user: {
+          id: data.user.id,
+          name: data.user.user_metadata.name,
+          email: data.user.email,
+          phone: data.user.user_metadata.phone,
+          role: resolveRole(data.user)
+        },
+        token: data.session.access_token
+      }
+    }, headers);
   }
 
   if (method === "GET" && route === "/products") {
-    const products = await getProducts();
-    return json(200, paginate(filterProducts(products, query), query));
+    const products = await getProducts(db);
+    const result = paginate(filterProducts(products, query).map(publicProduct), query);
+    return json(200, result, headers);
   }
 
   const productMatch = route.match(/^\/products\/(\d+)$/);
   if (method === "GET" && productMatch) {
-    const products = await getProducts();
+    const products = await getProducts(db);
     const product = products.find((item) => item.id === Number(productMatch[1]));
-    return product ? json(200, { data: product }) : json(404, { error: "Product not found." });
+    return product ? json(200, { data: publicProduct(product) }, headers) : json(404, { error: "Product not found." }, headers);
   }
 
   if (method === "POST" && route === "/orders") {
+    const auth = await requireAuth(event);
+    if (auth.error) return json(401, { error: auth.error }, headers);
+
     const body = parseBody(event);
+    if (body?.__bodyTooLarge) return json(413, { error: "Request body is too large." }, headers);
     const error = validateOrder(body);
-    if (error) return json(400, { error });
+    if (error) return json(400, { error }, headers);
+
+    const productIds = [...new Set(body.items.map((item) => Number(item.productId)))];
+    const { data: products, error: productsError } = await db
+      .from("products")
+      .select("id,price")
+      .in("id", productIds);
+    if (productsError) {
+      return json(400, { error: productsError.message }, headers);
+    }
+    const priceByProductId = new Map(products.map((product) => [Number(product.id), Number(product.price)]));
+    if (productIds.some((id) => !priceByProductId.has(id))) {
+      return json(400, { error: "One or more products in this order are no longer available." }, headers);
+    }
+
+    // Price the order from the catalog and coupon presets; client-supplied amounts are ignored.
+    const pricedItems = body.items.map((item) => ({
+      product_id: Number(item.productId),
+      quantity: Number(item.quantity),
+      unit_price: priceByProductId.get(Number(item.productId))
+    }));
+    const subtotal = pricedItems.reduce((sum, item) => sum + item.unit_price * item.quantity, 0);
+    const couponCode = typeof body.coupon === "string" ? body.coupon.trim().toUpperCase() : "";
+    const coupon = COUPON_PRESETS[couponCode] || null;
+    const deliveryFee = coupon?.type === "delivery" ? 0 : DELIVERY_FEE_NAIRA;
+    const discountAmount = coupon?.type === "percent" ? Math.round((subtotal * coupon.value) / 100) : 0;
+    const total = subtotal + deliveryFee - discountAmount;
+
+    const reference = createReference("ORD");
+    const { data: order, error: orderError } = await db
+      .from("orders")
+      .insert([{
+        reference,
+        user_id: auth.session.sub,
+        customer_name: body.customer.name.trim(),
+        customer_phone: body.customer.phone.trim(),
+        delivery_address: body.delivery.address.trim(),
+        delivery_instructions: typeof body.delivery.instructions === "string" && body.delivery.instructions.trim()
+          ? body.delivery.instructions.trim()
+          : null,
+        payment_method: typeof body.paymentMethod === "string" ? body.paymentMethod : null,
+        coupon_code: coupon ? couponCode : null,
+        subtotal,
+        delivery_fee: deliveryFee,
+        discount: discountAmount,
+        total
+      }])
+      .select()
+      .single();
+
+    if (orderError) {
+      return json(400, { error: orderError.message }, headers);
+    }
+
+    const itemsToInsert = pricedItems.map((item) => ({ ...item, order_id: order.id }));
+    const { error: itemsError } = await db
+      .from("order_items")
+      .insert(itemsToInsert);
+
+    if (itemsError) {
+      // Don't leave an order row behind if its items could not be stored.
+      await db.from("orders").delete().eq("id", order.id);
+      return json(400, { error: itemsError.message }, headers);
+    }
 
     return json(201, {
       data: {
-        reference: createReference("ORD"),
-        status: "received",
-        paymentStatus: "pending",
-        receivedAt: new Date().toISOString()
+        reference: order.reference,
+        status: order.status,
+        paymentStatus: order.payment_status,
+        receivedAt: order.created_at
       }
-    });
+    }, headers);
+  }
+
+  if (method === "POST" && route === "/consultations") {
+    const auth = await requireAuth(event);
+    if (auth.error) return json(401, { error: auth.error }, headers);
+
+    const body = parseBody(event);
+    if (body?.__bodyTooLarge) return json(413, { error: "Request body is too large." }, headers);
+    const error = validateConsultation(body);
+    if (error) return json(400, { error }, headers);
+
+    const reference = createReference("CON");
+    const { data: consultation, error: consultationError } = await db
+      .from("consultations")
+      .insert([{
+        reference,
+        user_id: auth.session.sub,
+        patient_name: typeof body.patientName === "string" && body.patientName.trim() ? body.patientName.trim() : auth.session.name,
+        patient_email: auth.session.email,
+        patient_phone: typeof body.patientPhone === "string" && body.patientPhone.trim() ? body.patientPhone.trim() : auth.session.phone,
+        specialist_id: Number(body.specialistId),
+        specialist_name: body.specialistName.trim(),
+        specialization: typeof body.specialization === "string" ? body.specialization : null,
+        consultation_date: body.date.trim(),
+        time_slot: body.timeSlot.trim(),
+        method: body.method,
+        reason: body.reason.trim()
+      }])
+      .select()
+      .single();
+
+    if (consultationError) {
+      return json(400, { error: consultationError.message }, headers);
+    }
+
+    return json(201, {
+      data: {
+        reference: consultation.reference,
+        status: consultation.status,
+        receivedAt: consultation.created_at
+      }
+    }, headers);
+  }
+
+  if (method === "POST" && route === "/health-profile") {
+    const auth = await requireAuth(event);
+    if (auth.error) return json(401, { error: auth.error }, headers);
+
+    const body = parseBody(event);
+    if (body?.__bodyTooLarge) return json(413, { error: "Request body is too large." }, headers);
+    const error = validateHealthProfile(body);
+    if (error) return json(400, { error }, headers);
+
+    const { error: profileError } = await db
+      .from("health_profiles")
+      .upsert({
+        user_id: auth.session.sub,
+        age: body.age ? Number(body.age) : null,
+        gender: body.gender || null,
+        weight: body.weight ? Number(body.weight) : null,
+        allergies: body.allergies || null,
+        chronic_conditions: body.chronicConditions || null,
+        medications: body.medications || null,
+        emergency_contact: body.emergencyContact || null,
+        preferred_checkin: body.preferredCheckin || null,
+        note: body.note || null,
+        updated_at: new Date().toISOString()
+      }, { onConflict: "user_id" });
+
+    if (profileError) return json(400, { error: profileError.message }, headers);
+    return json(200, { data: { saved: true } }, headers);
+  }
+
+  if (method === "GET" && route === "/admin/summary") {
+    const auth = await requireAdmin(event);
+    if (auth.error) return json(auth.status || 401, { error: auth.error }, headers);
+
+    const [orders, prescriptions, consultations] = await Promise.all([
+      db.from("orders").select("id", { count: "exact", head: true }),
+      db.from("prescriptions").select("id", { count: "exact", head: true }),
+      db.from("consultations").select("id", { count: "exact", head: true })
+    ]);
+
+    return json(200, {
+      data: {
+        orders: orders.count || 0,
+        prescriptions: prescriptions.count || 0,
+        consultations: consultations.count || 0
+      }
+    }, headers);
+  }
+
+  if (method === "GET" && route === "/admin/orders") {
+    const auth = await requireAdmin(event);
+    if (auth.error) return json(auth.status || 401, { error: auth.error }, headers);
+    const { data, error } = await db
+      .from("orders")
+      .select("id,reference,customer_name,customer_phone,total,status,payment_status,payment_method,created_at")
+      .order("created_at", { ascending: false })
+      .limit(50);
+    if (error) return json(400, { error: error.message }, headers);
+    return json(200, { data }, headers);
+  }
+
+  if (method === "GET" && route === "/admin/prescriptions") {
+    const auth = await requireAdmin(event);
+    if (auth.error) return json(auth.status || 401, { error: auth.error }, headers);
+    const { data, error } = await db
+      .from("prescriptions")
+      .select("id,reference,patient_name,patient_phone,patient_email,status,file_path,created_at")
+      .order("created_at", { ascending: false })
+      .limit(50);
+    if (error) return json(400, { error: error.message }, headers);
+    return json(200, { data }, headers);
+  }
+
+  if (method === "GET" && route === "/admin/consultations") {
+    const auth = await requireAdmin(event);
+    if (auth.error) return json(auth.status || 401, { error: auth.error }, headers);
+    const { data, error } = await db
+      .from("consultations")
+      .select("id,reference,patient_name,patient_email,specialist_name,specialization,consultation_date,time_slot,method,status,created_at")
+      .order("created_at", { ascending: false })
+      .limit(50);
+    if (error) return json(400, { error: error.message }, headers);
+    return json(200, { data }, headers);
   }
 
   if (method === "POST" && route === "/prescriptions") {
+    const auth = await requireAuth(event);
+    if (auth.error) return json(401, { error: auth.error }, headers);
+
     const body = parseBody(event);
+    if (body?.__bodyTooLarge) return json(413, { error: "Request body is too large." }, headers);
     const error = validatePrescription(body);
-    if (error) return json(400, { error });
+    if (error) return json(400, { error }, headers);
+
+    const reference = createReference("RX");
+    const { data: rx, error: rxError } = await db
+      .from("prescriptions")
+      .insert([{
+        reference,
+        user_id: auth.session.sub,
+        patient_name: body.patient.name.trim(),
+        patient_phone: body.patient.phone.trim(),
+        patient_email: typeof body.patient.email === "string" ? body.patient.email : null,
+        delivery_address: typeof body.patient.address === "string" ? body.patient.address : null,
+        file_path: body.prescription.fileName.trim()
+      }])
+      .select()
+      .single();
+
+    if (rxError) {
+      return json(400, { error: rxError.message }, headers);
+    }
 
     return json(201, {
       data: {
-        reference: createReference("RX"),
-        status: "queued_for_pharmacist_review",
-        receivedAt: new Date().toISOString()
+        reference: rx.reference,
+        status: rx.status,
+        receivedAt: rx.created_at
       }
-    });
+    }, headers);
   }
 
   return json(404, {
     error: "Endpoint not found.",
     route
-  });
+  }, headers);
 }

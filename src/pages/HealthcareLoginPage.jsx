@@ -1,6 +1,6 @@
 import { Lock } from "lucide-react";
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import FormInput from "../components/FormInput";
 import { useAuth } from "../hooks/useAuth";
 import { useToast } from "../hooks/useToast";
@@ -16,24 +16,56 @@ const initialForm = {
 function HealthcareLoginPage() {
   const [form, setForm] = useState(initialForm);
   const [mode, setMode] = useState("login");
-  const { login } = useAuth();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const { login, register } = useAuth();
   const { addToast } = useToast();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const redirectTo = searchParams.get("redirect") || "/healthcare";
 
-  const handleSubmit = (event) => {
+  const updateField = (field) => (event) => {
+    setForm((previous) => ({ ...previous, [field]: event.target.value }));
+  };
+
+  const handleSubmit = async (event) => {
     event.preventDefault();
+
     if (mode === "signup" && form.password !== form.confirmPassword) {
       addToast("Passwords do not match.", "error");
       return;
     }
-    login({ name: form.name, email: form.email });
-    addToast(
-      mode === "signup"
-        ? "Account created. Welcome to your health dashboard."
-        : "Login successful. Welcome to your health dashboard."
-    );
-    setForm(initialForm);
-    navigate("/healthcare");
+
+    setIsSubmitting(true);
+    try {
+      if (mode === "signup") {
+        const result = await register({
+          name: form.name,
+          email: form.email,
+          phone: form.phone,
+          password: form.password
+        });
+        if (result.needsConfirmation) {
+          addToast("Account created. Check your email to confirm your account, then log in.");
+          setForm(initialForm);
+          setMode("login");
+          return;
+        }
+        addToast("Account created. Welcome to your health dashboard.");
+      } else {
+        await login({
+          email: form.email,
+          password: form.password
+        });
+        addToast("Login successful. Welcome to your health dashboard.");
+      }
+
+      setForm(initialForm);
+      navigate(redirectTo);
+    } catch (error) {
+      addToast(error.message, "error");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -71,58 +103,64 @@ function HealthcareLoginPage() {
           </button>
         </div>
         <form onSubmit={handleSubmit} className="space-y-4">
-          <FormInput
-            label="Full Name"
-            name="name"
-            value={form.name}
-            onChange={(event) => setForm((previous) => ({ ...previous, name: event.target.value }))}
-            placeholder="Amina Johnson"
-            required
-          />
+          {mode === "signup" ? (
+            <FormInput
+              label="Full Name"
+              name="name"
+              value={form.name}
+              onChange={updateField("name")}
+              placeholder="Amina Johnson"
+              required
+            />
+          ) : null}
           <FormInput
             label="Email"
             name="email"
             type="email"
             value={form.email}
-            onChange={(event) => setForm((previous) => ({ ...previous, email: event.target.value }))}
+            onChange={updateField("email")}
             placeholder="amina@example.com"
             required
           />
+          {mode === "signup" ? (
+            <FormInput
+              label="Phone Number"
+              name="phone"
+              type="tel"
+              value={form.phone}
+              onChange={updateField("phone")}
+              placeholder="+234 801 234 5678"
+              required
+            />
+          ) : null}
           <FormInput
-            label="Phone Number"
-            name="phone"
-            type="tel"
-            value={form.phone}
-            onChange={(event) => setForm((previous) => ({ ...previous, phone: event.target.value }))}
-            placeholder="+234 801 234 5678"
+            label={mode === "signup" ? "Create Password" : "Password"}
+            name="password"
+            type="password"
+            value={form.password}
+            onChange={updateField("password")}
+            placeholder={mode === "signup" ? "At least 8 characters" : "Your password"}
+            minLength={mode === "signup" ? 8 : undefined}
+            required
           />
           {mode === "signup" ? (
-            <>
-              <FormInput
-                label="Create Password"
-                name="password"
-                type="password"
-                value={form.password}
-                onChange={(event) => setForm((previous) => ({ ...previous, password: event.target.value }))}
-                placeholder="••••••••"
-                required
-              />
-              <FormInput
-                label="Confirm Password"
-                name="confirmPassword"
-                type="password"
-                value={form.confirmPassword}
-                onChange={(event) => setForm((previous) => ({ ...previous, confirmPassword: event.target.value }))}
-                placeholder="••••••••"
-                required
-              />
-            </>
+            <FormInput
+              label="Confirm Password"
+              name="confirmPassword"
+              type="password"
+              value={form.confirmPassword}
+              onChange={updateField("confirmPassword")}
+              placeholder="Re-enter password"
+              minLength={8}
+              required
+            />
           ) : null}
           <button
             type="submit"
-            className="w-full rounded-full bg-accent-500 px-6 py-3 text-sm font-semibold text-white transition hover:bg-accent-600"
+            disabled={isSubmitting}
+            className="w-full rounded-full bg-accent-500 px-6 py-3 text-sm font-semibold text-white transition hover:bg-accent-600 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {mode === "signup" ? "Create Account" : "Login to Dashboard"}
+            {isSubmitting ? "Please wait..." : mode === "signup" ? "Create Account" : "Login to Dashboard"}
           </button>
         </form>
       </section>

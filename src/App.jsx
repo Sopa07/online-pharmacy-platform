@@ -11,15 +11,33 @@ import HealthcarePage from "./pages/HealthcarePage";
 import HealthcareLoginPage from "./pages/HealthcareLoginPage";
 import CheckoutPage from "./pages/CheckoutPage";
 import BulletinPage from "./pages/BulletinPage";
+import AdminPage from "./pages/AdminPage";
 import NotFoundPage from "./pages/NotFoundPage";
 import products from "./data/products.json";
 import { useCart } from "./hooks/useCart";
 import { useAuth } from "./hooks/useAuth";
 
 function ProtectedRoute({ children }) {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isReady } = useAuth();
+  if (!isReady) {
+    return <div className="card-soft p-6 text-sm font-semibold text-slate-600">Checking secure session...</div>;
+  }
   if (!isAuthenticated) {
     return <Navigate to="/healthcare/login" replace />;
+  }
+  return children;
+}
+
+function AdminRoute({ children }) {
+  const { isAdmin, isAuthenticated, isReady } = useAuth();
+  if (!isReady) {
+    return <div className="card-soft p-6 text-sm font-semibold text-slate-600">Checking admin access...</div>;
+  }
+  if (!isAuthenticated) {
+    return <Navigate to="/healthcare/login?redirect=/admin" replace />;
+  }
+  if (!isAdmin) {
+    return <Navigate to="/healthcare" replace />;
   }
   return children;
 }
@@ -58,6 +76,14 @@ function App() {
             }
           />
           <Route path="/checkout" element={<CheckoutPage />} />
+          <Route
+            path="/admin"
+            element={
+              <AdminRoute>
+                <AdminPage />
+              </AdminRoute>
+            }
+          />
           <Route path="/bulletin" element={<BulletinPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
