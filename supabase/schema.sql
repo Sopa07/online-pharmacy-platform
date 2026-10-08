@@ -67,9 +67,10 @@ create table if not exists public.products (
 create table if not exists public.orders (
   id uuid primary key default gen_random_uuid(),
   reference text not null unique,
-  user_id uuid not null references auth.users (id) on delete cascade,
+  user_id uuid references auth.users (id) on delete cascade, -- nullable: guest checkout
   customer_name text not null,
   customer_phone text not null,
+  customer_email text,
   delivery_address text not null,
   delivery_instructions text,
   payment_method text,

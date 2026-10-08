@@ -12,6 +12,7 @@ import { formatNaira } from "../utils/formatCurrency";
 const deliveryDefaults = {
   name: "",
   phone: "",
+  email: "",
   address: "",
   instructions: ""
 };
@@ -74,7 +75,8 @@ function CheckoutPage() {
       setDelivery((prev) => ({
         ...prev,
         name: prev.name || user.name || "",
-        phone: prev.phone || user.phone || ""
+        phone: prev.phone || user.phone || "",
+        email: prev.email || user.email || ""
       }));
     }
   }, [user]);
@@ -94,10 +96,6 @@ function CheckoutPage() {
       addToast("Your cart is empty. Add medicines before checkout.", "error");
       return;
     }
-    if (!token) {
-      addToast("Please log in before placing an order.", "error");
-      return;
-    }
 
     setIsSubmitting(true);
     try {
@@ -107,7 +105,8 @@ function CheckoutPage() {
         body: {
           customer: {
             name: delivery.name,
-            phone: delivery.phone
+            phone: delivery.phone,
+            email: delivery.email || null
           },
           delivery: {
             address: delivery.address,
@@ -185,19 +184,6 @@ function CheckoutPage() {
       </div>
 
       <form onSubmit={handlePlaceOrder} className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-        {!token ? (
-          <div className="xl:col-span-2 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-850 flex flex-wrap items-center justify-between gap-3 shadow-sm">
-            <div>
-              <span className="font-semibold text-rose-950">Authentication Required:</span> You must be logged in to place an order.
-            </div>
-            <Link
-              to="/healthcare/login?redirect=/checkout"
-              className="rounded-full bg-accent-500 px-4 py-2 text-xs font-semibold text-white hover:bg-accent-600 transition"
-            >
-              Log in / Sign up
-            </Link>
-          </div>
-        ) : null}
         <div className="space-y-6">
           <section className="card-soft p-6">
             <h2 className="text-lg font-semibold text-slate-900">Cart Summary</h2>
@@ -269,6 +255,16 @@ function CheckoutPage() {
                 onChange={(event) => setDelivery((previous) => ({ ...previous, phone: event.target.value }))}
                 required
               />
+              <div className="sm:col-span-2">
+                <FormInput
+                  label="Email (for payment receipts)"
+                  name="email"
+                  type="email"
+                  value={delivery.email}
+                  onChange={(event) => setDelivery((previous) => ({ ...previous, email: event.target.value }))}
+                  placeholder="you@example.com"
+                />
+              </div>
               <div className="sm:col-span-2">
                 <FormInput
                   label="Address"
@@ -376,10 +372,10 @@ function CheckoutPage() {
             </div>
             <button
               type="submit"
-              disabled={isSubmitting || !token}
+              disabled={isSubmitting}
               className="mt-5 w-full rounded-full bg-accent-500 px-6 py-3 text-sm font-semibold text-white transition hover:bg-accent-600 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {isSubmitting ? "Placing order..." : !token ? "Log in to Place Order" : "Place Order"}
+              {isSubmitting ? "Placing order..." : "Place Order"}
             </button>
           </section>
         </div>

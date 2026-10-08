@@ -24,7 +24,9 @@ function getSupabase() {
   if (!supabaseUrl || !supabaseServiceKey) return null;
   if (!supabaseClient && !supabaseInitError) {
     const cleaned = supabaseUrl.replace(/\/+$/, "").replace(/\/rest\/v1$/i, "").replace(/^["']|["']$/g, "");
-    if (!/^https:\/\/[a-z0-9-]+\.supabase\.(co|in)\/?$/i.test(cleaned)) {
+    const isHostedSupabase = /^https:\/\/[a-z0-9-]+\.supabase\.(co|in)\/?$/i.test(cleaned);
+    const isLocalSupabase = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/?$/i.test(cleaned);
+    if (!isHostedSupabase && !isLocalSupabase) {
       supabaseInitError = `SUPABASE_URL looks wrong (got "${supabaseUrl}"). It must be exactly https://your-project-id.supabase.co (Supabase → Settings → Data API → Project URL)`;
       console.warn(supabaseInitError);
       return null;
@@ -334,6 +336,10 @@ function validateOrder(body) {
   if (!Array.isArray(body.items) || body.items.length === 0) return "Order must include at least one item.";
   if (typeof body.customer?.name !== "string" || !body.customer.name.trim()) return "Customer name is required.";
   if (typeof body.customer?.phone !== "string" || !body.customer.phone.trim()) return "Customer phone is required.";
+  const customerEmail = body.customer?.email;
+  if (customerEmail && (typeof customerEmail !== "string" || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerEmail.trim()))) {
+    return "Customer email must be valid.";
+  }
   if (typeof body.delivery?.address !== "string" || !body.delivery.address.trim()) return "Delivery address is required.";
   if (
     body.items.some(
@@ -549,8 +555,9 @@ async function handleApiInner(event) {
   }
 
   if (method === "POST" && route === "/orders") {
-    const auth = await requireAuth(event);
-    if (auth.error) return json(401, { error: auth.error }, headers);
+    // Guest checkout: login is optional. A valid token links the order to the
+    // account; anything else places the order as a guest.
+    const session = await verifySessionToken(getBearerToken(event));
 
     const body = parseBody(event);
     if (body?.__bodyTooLarge) return json(413, { error: "Request body is too large." }, headers);
@@ -587,9 +594,12 @@ async function handleApiInner(event) {
       .from("orders")
       .insert([{
         reference,
-        user_id: auth.session.sub,
+        user_id: session?.sub ?? null,
         customer_name: body.customer.name.trim(),
         customer_phone: body.customer.phone.trim(),
+        customer_email: typeof body.customer.email === "string" && body.customer.email.trim()
+          ? body.customer.email.trim()
+          : null,
         delivery_address: body.delivery.address.trim(),
         delivery_instructions: typeof body.delivery.instructions === "string" && body.delivery.instructions.trim()
           ? body.delivery.instructions.trim()
@@ -626,7 +636,7 @@ async function handleApiInner(event) {
     if (body.paymentMethod !== "Cash on Delivery") {
       authorizationUrl = await initializePayment(
         order,
-        auth.session.email,
+        body.customer?.email || session?.email,
         siteUrl ? `${siteUrl}/checkout` : undefined
       );
     }
@@ -658,8 +668,9 @@ async function handleApiInner(event) {
   }
 
   if (method === "GET" && route === "/payments/verify") {
-    const auth = await requireAuth(event);
-    if (auth.error) return json(401, { error: auth.error }, headers);
+    // Works for guests too — the order reference is the capability. Logged-in
+    // users can only verify their own account's orders.
+    const session = await verifySessionToken(getBearerToken(event));
     const reference = String(query.reference || "").trim();
     if (!reference) return json(400, { error: "Payment reference is required." }, headers);
 
@@ -668,7 +679,7 @@ async function handleApiInner(event) {
       .select("id,reference,total,payment_status,user_id")
       .eq("reference", reference)
       .maybeSingle();
-    if (!order || order.user_id !== auth.session.sub) {
+    if (!order || (session && order.user_id && order.user_id !== session.sub)) {
       return json(404, { error: "Order not found for this reference." }, headers);
     }
 

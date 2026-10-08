@@ -66,10 +66,11 @@ await request({
 await request({
   httpMethod: "POST",
   rawUrl: "http://localhost/api/orders",
-  expectedStatus: 401,
+  expectedStatus: 201, // guest checkout is allowed without login
   body: JSON.stringify({
-    customer: { name: "Test Patient", phone: "+2348012345678" },
+    customer: { name: "Guest Patient", phone: "+2348012345678" },
     delivery: { address: "Lagos, Nigeria" },
+    paymentMethod: "Cash on Delivery",
     items: [{ productId: 1, quantity: 1 }]
   })
 });
